@@ -2,6 +2,7 @@ import { type InputTarget, type InsertTarget, captureTarget, isCurrentTarget, su
 import type { DictationState } from "../src/types";
 
 const selector = 'button[data-action="composer-submit"], button[data-action="prompt-submit"]';
+const alternateSelector = 'button[data-action="composer-alternate-delivery"]';
 const allowedClicks = new WeakSet<HTMLButtonElement>();
 const attributes = ["disabled", "aria-disabled", "aria-busy", "title", "aria-label"] as const;
 type Attribute = typeof attributes[number];
@@ -116,25 +117,46 @@ export function createNativeSend(onSend: () => void) {
   function intercept(event: Event) {
     if (destroyed || state === "idle" || !target || !isCurrentTarget(target)) return;
     const button = nativeButton(target);
-    // Never steal Stop/shell or another form's actions, even between observer turns.
-    if (!button || !isSend(button) || allowedClicks.has(button)) return;
     const element = event.target instanceof Element ? event.target : null;
-    let ours = false;
-    if (event.type === "click") ours = element?.closest(selector) === button;
+    let intent: "send" | "alternate" | undefined;
+    if (event.type === "click") {
+      const alternate = element?.closest(alternateSelector);
+      if (alternate && target.composer.contains(alternate)) intent = "alternate";
+      else if (button && isSend(button) && element?.closest(selector) === button) intent = "send";
+    }
     if (event.type === "submit") {
       const submitter = (event as SubmitEvent).submitter;
-      ours = event.target === button.form && (!submitter || submitter === button);
+      if (submitter instanceof HTMLButtonElement && submitter.matches(alternateSelector) &&
+        target.composer.contains(submitter) && event.target === submitter.form) intent = "alternate";
+      else if (button && isSend(button) && event.target === button.form &&
+        (!submitter || submitter === button)) intent = "send";
     }
     if (event instanceof KeyboardEvent) {
       // Native button keyboard activation is handled by its resulting click. Enter
       // in the editor can bypass .click(), so catch it before OpenCode's key handler.
-      ours = target.editor.contains(element) && event.key === "Enter" && !event.shiftKey &&
-        !event.ctrlKey && !event.metaKey && !event.altKey && !event.isComposing && event.keyCode !== 229;
+      if (target.editor.contains(element) && event.key === "Enter" && !event.shiftKey &&
+        !event.isComposing && event.keyCode !== 229) {
+        // OpenCode 2.0.27 consumes Enter for its adjacent suggestions popover
+        // before considering submission. Do not turn a selection into voice send.
+        if (target.composer.matches('form[data-component="composer"]') &&
+          target.composer.previousElementSibling?.matches('[data-component="composer-suggestions"]')) return;
+        const alternate = event.ctrlKey || event.metaKey;
+        if (alternate && target.composer.querySelector(alternateSelector)) intent = "alternate";
+        else if (button && isSend(button)) intent = alternate ? "alternate" : "send";
+      }
     }
-    if (!ours) return;
+    if (!intent) return;
+    // The exception belongs only to the validated primary click and its form
+    // submission, not to an alternate action dispatched by a native listener.
+    if (intent === "send" && button && allowedClicks.has(button) &&
+      (event.type === "click" || event.type === "submit")) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    if (state === "recording" && !(event instanceof KeyboardEvent && (event.repeat || event.type === "keyup"))) onSend();
+    // Queue/Steer can invert or disappear while transcription is pending. Keep
+    // that action blocked until voice is idle rather than replaying a new meaning.
+    // Alt-only Enter is a normal submit in OpenCode; Ctrl/Meta select alternate.
+    if (intent === "send" && state === "recording" &&
+      !(event instanceof KeyboardEvent && (event.repeat || event.type === "keyup"))) onSend();
   }
   // Capture beats both direct button listeners and delegated framework handlers.
   const events = ["click", "submit", "keydown", "keyup"];

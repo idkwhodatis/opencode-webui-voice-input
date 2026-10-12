@@ -19,13 +19,14 @@ function waitForTurn(delay: number, signal: AbortSignal): Promise<void> {
 }
 
 // Retry native readiness, never a dispatched click or an unacknowledged network send.
-// Never force-enable message submission or queue a send behind a running agent.
+// Never force-enable submission or wait beyond the readiness budget. A dispatched
+// click inherits OpenCode's current primary action, including native Queue/Steer.
 export async function sendDraft(target: InputTarget, signal: AbortSignal): Promise<"sent" | "cancelled" | "changed" | "unavailable"> {
   const draft = draftSnapshot(target);
   let edited = false;
   const changed = () => { edited = true; };
   const nativeClick = (event: Event) => {
-    if (event.target instanceof Element && event.target.closest('button[data-action="composer-submit"], button[data-action="prompt-submit"]')) edited = true;
+    if (event.target instanceof Element && event.target.closest('button[data-action="composer-submit"], button[data-action="prompt-submit"], button[data-action="composer-alternate-delivery"]')) edited = true;
   };
   target.editor.addEventListener("input", changed);
   target.composer.addEventListener("click", nativeClick, true);

@@ -109,6 +109,26 @@ describe("server direct-send settle delay", () => {
     expect(fixture.clicked).toHaveBeenCalledOnce();
   });
 
+  it("cancels a pending primary send after a manual nested alternate click", async () => {
+    const fixture = setup();
+    const alternate = document.createElement("button");
+    alternate.type = "button";
+    alternate.dataset.action = "composer-alternate-delivery";
+    alternate.innerHTML = "<span>Queue</span>";
+    fixture.button.before(alternate);
+    const alternateClick = vi.fn();
+    alternate.addEventListener("click", alternateClick);
+    const result = fixture.start();
+    await vi.advanceTimersByTimeAsync(25);
+    // If a caller has already released voice interception, a manual native
+    // alternate dispatch still cancels any pending automatic primary dispatch.
+    alternate.querySelector("span")!.click();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(await result).toBe("changed");
+    expect(alternateClick).toHaveBeenCalledOnce();
+    expect(fixture.clicked).not.toHaveBeenCalled();
+  });
+
   it("preserves bounded readiness polling before the first dispatched click", async () => {
     const fixture = setup();
     fixture.button.disabled = true;

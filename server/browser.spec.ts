@@ -2,6 +2,9 @@ import { expect, test, type Page } from "@playwright/test";
 
 const editorSelector = '[data-component="composer-editor"], [data-component="prompt-input"][contenteditable]';
 const nativeSelector = 'button[data-action="composer-submit"], button[data-action="prompt-submit"]';
+const alternateSelector = 'button[data-action="composer-alternate-delivery"]';
+const alternateShortcuts = ["Control+Enter", "Meta+Enter", "Control+Alt+Enter", "Meta+Alt+Enter"];
+const fullDraft = "@context existing Hello 你好 <img onerror=bad()>";
 
 test.beforeEach(async ({ page, request }) => {
   await request.post("/__test/reset");
@@ -43,6 +46,76 @@ async function reactiveComposer(page: Page, delay = 0) {
     });
     button.addEventListener("click", () => { stats.sentText = editor.textContent ?? ""; });
   }, { editorSelector, nativeSelector, delay });
+}
+
+// Model the public OpenCode 2.0.27 event contract without importing its source:
+// editor Enter and the Queue/Steer hint call the controller directly, bypassing
+// the main button. Alt does not change delivery; Ctrl/Cmd selects the alternate.
+async function nativeComposerDelivery(page: Page, label = "Queue") {
+  await page.evaluate(({ editorSelector, nativeSelector, label }) => {
+    const editor = document.querySelector<HTMLElement>(editorSelector)!;
+    const button = document.querySelector<HTMLButtonElement>(nativeSelector)!;
+    const deliveries: { alternate: boolean; text: string }[] = [];
+    Object.assign(window, { nativeDeliveries: deliveries });
+    const submit = (alternate = false) => {
+      deliveries.push({ alternate, text: editor.textContent ?? "" });
+      const w = window as unknown as { sendCount: number };
+      w.sendCount++;
+    };
+    button.onclick = () => submit();
+    editor.addEventListener("keydown", (event) => {
+      const mod = event.metaKey || event.ctrlKey;
+      if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+        event.preventDefault();
+        if (event.repeat) return;
+        submit(mod);
+      }
+    });
+    const alternate = document.createElement("button");
+    alternate.type = "button";
+    alternate.dataset.action = "composer-alternate-delivery";
+    alternate.style.width = "auto";
+    alternate.innerHTML = `${label} <span><kbd>⌘⏎</kbd></span>`;
+    alternate.onclick = () => submit(true);
+    button.before(alternate);
+    editor.focus();
+    const range = document.createRange();
+    range.selectNodeContents(editor); range.collapse(false);
+    window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(range);
+  }, { editorSelector, nativeSelector, label });
+}
+
+async function alternateAttempts(page: Page) {
+  await page.locator(editorSelector).focus();
+  for (const shortcut of alternateShortcuts) await page.keyboard.press(shortcut);
+  // The actual event target is inside the hint, not the alternate button itself.
+  await page.locator(`${alternateSelector} kbd`).tap();
+}
+
+async function holdMicrophone(page: Page) {
+  await page.evaluate(() => {
+    const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => { release = resolve; });
+    Object.assign(window, { releaseMicrophone: release });
+    Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+      configurable: true,
+      value: async (constraints: MediaStreamConstraints) => { await ready; return original(constraints); },
+    });
+  });
+  return () => page.evaluate(() => (window as unknown as { releaseMicrophone: () => void }).releaseMicrophone());
+}
+
+async function holdTranscription(page: Page) {
+  let release!: () => void;
+  let calls = 0;
+  const ready = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/voice/transcribe", async (route) => {
+    calls++;
+    await ready;
+    await route.continue();
+  });
+  return { release, calls: () => calls };
 }
 
 test("Stop inserts editable text, enables native Send, and ignores legacy auto-submit=true", async ({ page, request }) => {
@@ -367,16 +440,22 @@ test("replacement native button is intercepted without losing its own click list
   expect(await page.evaluate("window.sendCount")).toBe(1);
 });
 
-test("an agent Stop action appearing mid-recording is never intercepted", async ({ page, request }) => {
-  await page.goto("/project/session");
-  await record(page);
-  await page.locator(nativeSelector).evaluate((button) => button.setAttribute("data-icon", "stop"));
-  await expect(page.getByRole("button", { name: "Transcribe and send", exact: true })).toHaveCount(0);
-  await page.locator(nativeSelector).tap();
-  expect(await page.evaluate("window.sendCount")).toBe(1); // Original native handler.
-  expect((await (await request.get("/__test/state")).json()).calls).toBe(0);
-  await page.getByRole("button", { name: "Cancel dictation", exact: true }).tap();
-});
+for (const action of ["stop", "terminal"]) {
+  test(`a native ${action} action appearing mid-recording is never intercepted`, async ({ page, request }) => {
+    await page.goto("/project/session");
+    await nativeComposerDelivery(page);
+    await record(page);
+    await page.locator(nativeSelector).evaluate((button, action) => button.setAttribute("data-icon", action), action);
+    await expect(page.getByRole("button", { name: "Transcribe and send", exact: true })).toHaveCount(0);
+    await alternateAttempts(page);
+    expect(await page.evaluate("window.nativeDeliveries")).toEqual([]);
+    await expect(page.getByRole("button", { name: "Stop and review", exact: true })).toBeVisible();
+    await page.locator(nativeSelector).tap();
+    expect(await page.evaluate("window.sendCount")).toBe(1); // Original native handler.
+    expect((await (await request.get("/__test/state")).json()).calls).toBe(0);
+    await page.getByRole("button", { name: "Cancel dictation", exact: true }).tap();
+  });
+}
 
 test("form submission and repeated clicks cannot send a draft before transcription", async ({ page, request }) => {
   await request.post("/__test/delay");
@@ -398,22 +477,145 @@ test("form submission and repeated clicks cannot send a draft before transcripti
   expect((await (await request.get("/__test/state")).json()).calls).toBe(1);
 });
 
-test("Enter in the editor transcribes instead of submitting the untranscribed draft", async ({ page, request }) => {
-  await request.post("/__test/delay");
+for (const shortcut of ["Enter", "Alt+Enter"]) {
+  test(`${shortcut} transcribes and sends the full draft once through native Send`, async ({ page, request }) => {
+    await request.post("/__test/delay");
+    await page.goto("/project/session");
+    await nativeComposerDelivery(page);
+    await record(page);
+    await page.locator(editorSelector).focus();
+    await page.keyboard.press(shortcut);
+    expect(await page.evaluate("window.nativeDeliveries")).toEqual([]);
+    await idle(page);
+    expect(await page.evaluate("window.nativeDeliveries")).toEqual([{ alternate: false, text: fullDraft }]);
+    expect(await page.evaluate("window.sendCount")).toBe(1);
+    expect((await (await request.get("/__test/state")).json()).calls).toBe(1);
+  });
+}
+
+for (const [label, finish] of [["Queue", "Transcribe and send"], ["Steer", "Stop and review"]]) {
+  test(`${label} and modified Enter stay blocked through every voice phase, then ${finish}`, async ({ page, request }) => {
+    await page.goto("/project/session");
+    await nativeComposerDelivery(page, label);
+    const releaseMicrophone = await holdMicrophone(page);
+    const transcription = await holdTranscription(page);
+    try {
+      await page.getByRole("button", { name: "Voice Dictation (Ctrl+Space)", exact: true }).tap();
+      await expect(page.locator(".ocvd-btn")).toHaveAttribute("title", "Waiting for microphone...");
+      await alternateAttempts(page);
+      // Plain/Alt+Enter must not bypass the startup gate either.
+      await page.locator(editorSelector).focus();
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("Alt+Enter");
+      expect(await page.evaluate("window.nativeDeliveries")).toEqual([]);
+      expect(transcription.calls()).toBe(0);
+
+      await releaseMicrophone();
+      await expect(page.getByRole("button", { name: "Stop and review", exact: true })).toBeVisible();
+      await page.waitForTimeout(200);
+      await alternateAttempts(page);
+      // Alternate actions neither stop the recording nor remember a send intent.
+      await expect(page.getByRole("button", { name: "Stop and review", exact: true })).toBeVisible();
+      expect(await page.evaluate("window.nativeDeliveries")).toEqual([]);
+      expect(transcription.calls()).toBe(0);
+
+      await page.getByRole("button", { name: finish, exact: true }).tap();
+      await expect(page.locator(".ocvd-btn")).toHaveAttribute("title", "Transcribing...");
+      await expect.poll(transcription.calls).toBe(1);
+      await alternateAttempts(page);
+      await page.locator(editorSelector).focus();
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("Alt+Enter");
+      expect(await page.evaluate("window.nativeDeliveries")).toEqual([]);
+      expect(transcription.calls()).toBe(1);
+
+      transcription.release();
+      await idle(page);
+      const expected = finish === "Transcribe and send" ? [{ alternate: false, text: fullDraft }] : [];
+      await expect(page.locator(editorSelector)).toHaveText(fullDraft);
+      await expect(page.locator("[data-mention]")).toHaveCount(1);
+      expect(await page.evaluate("window.nativeDeliveries")).toEqual(expected);
+      expect((await (await request.get("/__test/state")).json()).calls).toBe(1);
+      // Only a fresh idle action may deliver the retained draft. Nothing replays.
+      await page.locator(`${alternateSelector} kbd`).tap();
+      expect(await page.evaluate("window.nativeDeliveries")).toEqual([
+        ...expected, { alternate: true, text: fullDraft },
+      ]);
+      expect(transcription.calls()).toBe(1);
+    } finally {
+      transcription.release();
+      await releaseMicrophone();
+    }
+  });
+}
+
+test("idle native Enter, modified Enter, and nested alternate delivery are unchanged", async ({ page, request }) => {
   await page.goto("/project/session");
-  await page.evaluate((selector) => {
-    document.querySelector(selector)!.addEventListener("keydown", (event) => {
-      if ((event as KeyboardEvent).key === "Enter") {
-        const w = window as unknown as { sendCount: number }; w.sendCount++;
-      }
-    });
-  }, editorSelector);
-  await record(page);
+  await nativeComposerDelivery(page);
+  await alternateAttempts(page);
   await page.locator(editorSelector).focus();
   await page.keyboard.press("Enter");
-  expect(await page.evaluate("window.sendCount")).toBe(0);
-  await idle(page);
-  expect(await page.evaluate("window.sendCount")).toBe(1);
+  await page.keyboard.press("Alt+Enter");
+  await page.locator(nativeSelector).tap();
+  expect(await page.evaluate("window.nativeDeliveries")).toEqual([
+    ...Array.from({ length: alternateShortcuts.length + 1 }, () => ({ alternate: true, text: "@context existing" })),
+    ...Array.from({ length: 3 }, () => ({ alternate: false, text: "@context existing" })),
+  ]);
+  expect((await (await request.get("/__test/state")).json()).calls).toBe(0);
+});
+
+test("Shift+Enter, composition, and IME events still reach the editor during recording", async ({ page, request }) => {
+  await page.goto("/project/session");
+  await record(page);
+  const received = await page.locator(editorSelector).evaluate((editor) => {
+    const events: { defaultPrevented: boolean; shift: boolean; composing: boolean; keyCode: number }[] = [];
+    editor.addEventListener("keydown", (event) => {
+      const key = event as KeyboardEvent;
+      events.push({ defaultPrevented: key.defaultPrevented, shift: key.shiftKey, composing: key.isComposing, keyCode: key.keyCode });
+    });
+    for (const options of [{ shiftKey: true }, { isComposing: true }, { keyCode: 229 }]) {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true, ...options }));
+    }
+    return events;
+  });
+  expect(received).toEqual([
+    { defaultPrevented: false, shift: true, composing: false, keyCode: 0 },
+    { defaultPrevented: false, shift: false, composing: true, keyCode: 0 },
+    { defaultPrevented: false, shift: false, composing: false, keyCode: 229 },
+  ]);
+  await expect(page.getByRole("button", { name: "Stop and review", exact: true })).toBeVisible();
+  expect((await (await request.get("/__test/state")).json()).calls).toBe(0);
+  await page.getByRole("button", { name: "Cancel dictation", exact: true }).tap();
+});
+
+test("Enter selects a visible composer suggestion without finishing voice", async ({ page, request }) => {
+  await page.goto("/project/session");
+  await nativeComposerDelivery(page);
+  await record(page);
+  await page.evaluate((selector) => {
+    const editor = document.querySelector<HTMLElement>(selector)!;
+    const composer = editor.closest("form")!;
+    const suggestions = document.createElement("div");
+    suggestions.dataset.component = "composer-suggestions";
+    suggestions.textContent = "Suggested context";
+    composer.before(suggestions);
+    Object.assign(window, { suggestionSelections: 0 });
+    // OpenCode's controller handles a suggestion before its submit key handler.
+    editor.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      const w = window as unknown as { suggestionSelections: number };
+      w.suggestionSelections++;
+      suggestions.remove();
+    }, { capture: true, once: true });
+  }, editorSelector);
+  await page.locator(editorSelector).focus();
+  await page.keyboard.press("Enter");
+  expect(await page.evaluate("window.suggestionSelections")).toBe(1);
+  expect(await page.evaluate("window.nativeDeliveries")).toEqual([]);
+  await expect(page.getByRole("button", { name: "Stop and review", exact: true })).toBeVisible();
+  expect((await (await request.get("/__test/state")).json()).calls).toBe(0);
+  await page.getByRole("button", { name: "Cancel dictation", exact: true }).tap();
 });
 
 test("pagehide releases the temporary button override", async ({ page }) => {
