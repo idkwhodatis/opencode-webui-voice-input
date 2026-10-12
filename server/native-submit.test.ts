@@ -104,7 +104,7 @@ describe("native voice submission guards", () => {
       expect(f.onSend).toHaveBeenCalledOnce();
       const result = f.finish();
       f.key({ metaKey: true, altKey: true });
-      await vi.advanceTimersByTimeAsync(49);
+      await vi.advanceTimersByTimeAsync(4);
       expect(f.native).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
       expect(await result).toBe("sent");
@@ -255,7 +255,7 @@ describe("native voice submission guards", () => {
     const f = setup("processing");
     f.button.addEventListener("click", () => { f.alternate.click(); f.key({ ctrlKey: true }); });
     const result = f.finish();
-    await vi.advanceTimersByTimeAsync(50);
+    await vi.advanceTimersByTimeAsync(5);
     expect(await result).toBe("sent");
     expect(f.native).toHaveBeenCalledExactlyOnceWith(false, "@context old draft new transcript");
   });
@@ -264,7 +264,7 @@ describe("native voice submission guards", () => {
     const f = setup("processing");
     f.button.type = "submit";
     const result = f.finish();
-    await vi.advanceTimersByTimeAsync(50);
+    await vi.advanceTimersByTimeAsync(5);
     expect(await result).toBe("sent");
     // Click plus its form default action are both left to the native app. Voice
     // emits only one click and never replaces native form semantics.

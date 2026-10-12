@@ -32,10 +32,10 @@ export async function sendDraft(target: InputTarget, signal: AbortSignal): Promi
   target.composer.addEventListener("click", nativeClick, true);
   const deadline = performance.now() + 1500;
   try {
-    // Give OpenCode 50 ms to settle the inserted draft before the first attempt.
+    // Give OpenCode 5 ms to settle the inserted draft before the first attempt.
     // An already-enabled button alone cannot prove it holds the newly inserted draft.
     // Cancellation, target and draft guards are rechecked below after this wait.
-    await waitForTurn(50, signal);
+    await waitForTurn(5, signal);
     while (true) {
       if (signal.aborted || !isCurrentTarget(target)) return "cancelled";
       if (edited || draftSnapshot(target) !== draft) return "changed";
