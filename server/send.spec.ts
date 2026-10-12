@@ -3,7 +3,7 @@ import type { InputTarget } from "../src/insert";
 import type { sendDraft } from "./send";
 
 type Outcome = Awaited<ReturnType<typeof sendDraft>>;
-type StateUpdate = "sync" | "microtasks" | "timer";
+type StateUpdate = "sync" | "microtasks" | "timer" | "delayed-timer";
 interface SendFixture {
   target: InputTarget;
   controller: AbortController;
@@ -43,7 +43,7 @@ async function setup(page: Page, stateUpdate: StateUpdate = "sync", disabled = f
       // One await Promise.resolve() is insufficient: the second microtask would
       // still see old reactive state when the button was already enabled.
       else if (stateUpdate === "microtasks") queueMicrotask(() => queueMicrotask(commit));
-      else setTimeout(commit, 0);
+      else setTimeout(commit, stateUpdate === "delayed-timer" ? 25 : 0);
     });
     const text = document.createTextNode(" new transcript");
     editor.append(text);
@@ -59,9 +59,11 @@ async function result(page: Page) {
   return page.evaluate(() => ({ outcomes: window.sendFixture.outcomes, clicks: window.sendFixture.clicks }));
 }
 
-for (const update of ["sync", "microtasks", "timer"] as const) {
-  test(`first ready attempt has no 50 ms delay and uses the new ${update} state`, async ({ page }) => {
+for (const update of ["sync", "microtasks", "timer", "delayed-timer"] as const) {
+  test(`first ready attempt waits 50 ms and uses the new ${update} state`, async ({ page }) => {
     await setup(page, update);
+    expect(await result(page)).toEqual({ outcomes: [], clicks: [] });
+    await page.clock.runFor(49);
     expect(await result(page)).toEqual({ outcomes: [], clicks: [] });
     await page.clock.runFor(1);
     expect(await result(page)).toEqual({ outcomes: ["sent"], clicks: ["@context old draft  new transcript"] });
@@ -104,7 +106,7 @@ for (const block of ["disabled", "aria-disabled", "fieldset"]) {
 for (const interruption of ["abort", "input", "attachment", "navigate", "replace", "question", "native-click"] as const) {
   test(`${interruption} cancels a readiness retry without a later automatic send`, async ({ page }) => {
     await setup(page, "sync", true);
-    await page.clock.runFor(1);
+    await page.clock.runFor(50);
     await page.evaluate((interruption) => {
       const fixture = window.sendFixture;
       const { editor, composer } = fixture.target;
@@ -149,7 +151,7 @@ test("concurrent sends share the native-click guard and cannot double dispatch",
 for (const action of ["stop", "terminal", "missing", "hidden"]) {
   test(`${action} appearing during retry ends the attempt without clicking`, async ({ page }) => {
     await setup(page, "sync", true);
-    await page.clock.runFor(1);
+    await page.clock.runFor(50);
     await page.evaluate((action) => {
       const button = document.querySelector<HTMLButtonElement>('[data-action="composer-submit"]')!;
       window.sendFixture.enable();
@@ -176,8 +178,35 @@ test("readiness exhaustion ends at 1.5 s with the draft retained", async ({ page
 
 test("a throttled retry cannot click after the deadline", async ({ page }) => {
   await setup(page, "sync", true);
-  await page.clock.runFor(1);
+  await page.clock.runFor(50);
   await page.evaluate(() => window.sendFixture.enable());
   await page.clock.fastForward(2000);
   expect(await result(page)).toEqual({ outcomes: ["unavailable"], clicks: [] });
+});
+
+for (const interruption of ["abort", "navigate"] as const) {
+  test(`${interruption} during the initial 50 ms wait prevents sending`, async ({ page }) => {
+    await setup(page);
+    await page.clock.runFor(25);
+    await page.evaluate((interruption) => {
+      if (interruption === "abort") window.sendFixture.controller.abort();
+      else history.pushState({}, "", "/project/other-session");
+    }, interruption);
+    await page.clock.runFor(2000);
+    expect(await result(page)).toEqual({ outcomes: ["cancelled"], clicks: [] });
+  });
+}
+
+test("an unacknowledged native send is not retried and leaves the draft for manual retry", async ({ page }) => {
+  // The fixture records the click but deliberately neither accepts nor clears the draft.
+  await setup(page, "delayed-timer");
+  await page.clock.runFor(2050);
+  expect(await result(page)).toEqual({ outcomes: ["sent"], clicks: ["@context old draft  new transcript"] });
+  await expect(page.locator('[data-component="composer-editor"]')).toContainText("new transcript");
+  await page.evaluate(() => {
+    document.querySelector<HTMLButtonElement>('[data-action="composer-submit"]')!.click();
+  });
+  expect((await result(page)).clicks).toHaveLength(2);
+  await page.clock.runFor(2000);
+  expect((await result(page)).clicks).toHaveLength(2);
 });

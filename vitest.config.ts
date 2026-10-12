@@ -9,7 +9,7 @@ export default defineConfig({
   },
   test: {
     environment: "happy-dom",
-    include: ["tests/**/*.test.ts"],
+    include: ["tests/**/*.test.ts", "server/send.test.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],

@@ -27,6 +27,7 @@
     "settings.ts",
     "browser.ts",
     "service.test.ts",
+    "send.test.ts",
     "browser-fixture.ts",
     "paths.ts",
     "paths.test.ts",
