@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode Voice Dictation
 // @namespace    https://github.com/idkwhodatis/opencode-voice-dictation
-// @version      1.1.5
+// @version      1.1.6
 // @author       slaid098
 // @description  Voice dictation for OpenCode web using Whisper (Groq API) - works on PC and mobile
 // @icon         https://raw.githubusercontent.com/idkwhodatis/opencode-voice-dictation/master/assets/icon.png
@@ -172,8 +172,11 @@
       return false;
     }
   }
+  function isTextControl(editor) {
+    return editor instanceof HTMLTextAreaElement || editor instanceof HTMLInputElement;
+  }
   const EDITOR_SELECTOR = '[data-component="composer-editor"][contenteditable="true"], [data-component="prompt-input"][contenteditable="true"]';
-  const QUESTION_SELECTOR = 'textarea[data-slot="question-custom-input"]:not(:disabled)';
+  const QUESTION_SELECTOR = 'textarea[data-slot="question-custom-input"], [data-component="session-question-dock"] .question-custom-field input[data-slot="text-input-v2-input"]';
   const COMPOSER_SELECTORS = [
     'form[data-component="composer"]',
     '[data-component="prompt-input-v2"]',
@@ -181,13 +184,51 @@
     '[data-component="session-new-composer"]',
     '[data-component="session-composer"]'
   ];
+  function questionAvailable(editor) {
+    if (editor.matches(":disabled") || editor.closest("fieldset:disabled") || editor.readOnly)
+      return false;
+    if (editor.closest('[inert], [hidden], [aria-hidden="true"], [data-disabled="true"]'))
+      return false;
+    for (let element = editor; element; element = element.parentElement) {
+      const style = getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") {
+        return false;
+      }
+    }
+    return true;
+  }
+  function questionTarget() {
+    var _a, _b;
+    for (const editor of document.querySelectorAll(
+      QUESTION_SELECTOR
+    )) {
+      if (!questionAvailable(editor)) continue;
+      const root = editor.closest('[data-component="session-question-dock"]');
+      const progress = root ? [...root.querySelectorAll('[data-slot="question-progress-segment"]')] : [];
+      const key = JSON.stringify([
+        (_a = root == null ? void 0 : root.querySelector('[data-slot="question-text"]')) == null ? void 0 : _a.textContent,
+        (_b = root == null ? void 0 : root.querySelector('[data-slot="question-options"]')) == null ? void 0 : _b.getAttribute("aria-label"),
+        progress.length,
+        progress.findIndex((item) => item.matches('[data-active="true"], [aria-current="step"]'))
+      ]);
+      const composer = editor instanceof HTMLInputElement ? editor.closest('[data-slot="question-option"][data-custom="true"]') : editor.parentElement;
+      if (composer)
+        return {
+          kind: "question",
+          editor,
+          composer,
+          url: location.href,
+          question: root ? { root, key } : void 0
+        };
+    }
+    return null;
+  }
   function isQuestionPromptOpen() {
-    return document.querySelector(QUESTION_SELECTOR) !== null;
+    return questionTarget() !== null;
   }
   function captureTarget(kind = "composer") {
     if (kind === "question") {
-      const editor = document.querySelector(QUESTION_SELECTOR);
-      return (editor == null ? void 0 : editor.parentElement) ? { kind, editor, composer: editor.parentElement, url: location.href } : null;
+      return questionTarget();
     }
     if (isQuestionPromptOpen()) return null;
     for (const selector of COMPOSER_SELECTORS) {
@@ -200,18 +241,22 @@
     return null;
   }
   function isCurrentTarget(target) {
+    var _a, _b, _c, _d;
     const current = captureTarget(target.kind);
-    return target.url === location.href && (current == null ? void 0 : current.editor) === target.editor && current.composer === target.composer && target.editor.isConnected;
+    return target.url === location.href && (current == null ? void 0 : current.editor) === target.editor && current.composer === target.composer && ((_a = current.question) == null ? void 0 : _a.root) === ((_b = target.question) == null ? void 0 : _b.root) && ((_c = current.question) == null ? void 0 : _c.key) === ((_d = target.question) == null ? void 0 : _d.key) && target.editor.isConnected;
   }
   function insertText(text, target) {
     var _a;
     if (!text.trim() || !isCurrentTarget(target)) return false;
     const { editor } = target;
-    const existing = editor instanceof HTMLTextAreaElement ? editor.value : editor.textContent;
-    const append = `${existing && !/\s$/.test(existing) ? " " : ""}${text}`;
+    const transcript = editor instanceof HTMLInputElement ? text.replace(/[\r\n]+/g, " ") : text;
     editor.focus();
-    if (editor instanceof HTMLTextAreaElement) {
-      const setter = (_a = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")) == null ? void 0 : _a.set;
+    if (!isCurrentTarget(target)) return false;
+    const existing = isTextControl(editor) ? editor.value : editor.textContent;
+    const append = `${existing && !/\s$/.test(existing) ? " " : ""}${transcript}`;
+    if (isTextControl(editor)) {
+      const prototype = editor instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+      const setter = (_a = Object.getOwnPropertyDescriptor(prototype, "value")) == null ? void 0 : _a.set;
       if (!setter) return false;
       setter.call(editor, editor.value + append);
       editor.selectionStart = editor.selectionEnd = editor.value.length;
@@ -407,6 +452,11 @@
       top: 8px;
       right: 8px;
       z-index: 1;
+    }
+    .${CONTAINER_CLASS}[data-layout="question-inline"] {
+      position: static;
+      margin-inline-end: 0;
+      align-self: center;
     }
     .${BUTTON_CLASS}, .${CANCEL_CLASS} {
       box-sizing: border-box;
@@ -739,6 +789,9 @@
         target.kind
       );
       controls = added ?? target.composer.querySelector(`.${CONTAINER_CLASS}`);
+      if (controls && target.kind === "question" && target.editor instanceof HTMLInputElement) {
+        controls.dataset.layout = "question-inline";
+      }
       if (controls && submit) {
         matchButtonSize(controls, submit);
         matchSubmitSpacing(controls, submit);
@@ -749,8 +802,20 @@
     observer.observe(document.body, {
       childList: true,
       subtree: true,
+      characterData: true,
       attributes: true,
-      attributeFilter: ["contenteditable", "disabled"]
+      attributeFilter: [
+        "contenteditable",
+        "disabled",
+        "readonly",
+        "inert",
+        "hidden",
+        "aria-hidden",
+        "aria-label",
+        "aria-current",
+        "data-active",
+        "data-disabled"
+      ]
     });
     window.addEventListener("resize", inject);
     window.addEventListener("urlchange", inject);

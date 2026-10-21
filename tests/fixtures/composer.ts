@@ -32,3 +32,23 @@ export function mountRenamedComposer(): HTMLDivElement {
     </form></div>`;
   return document.querySelector('[data-component="composer-editor"]') as HTMLDivElement;
 }
+
+// OpenCode v2.0.29 through v2.1.2, PR #54822. Public markers only.
+export function mountQuestionInput(): HTMLInputElement {
+  document.body.innerHTML = `<div data-component="session-question-dock">
+    <div data-slot="question-text">First question</div>
+    <div data-slot="question-progress">
+      <button data-slot="question-progress-segment" data-active="true" aria-current="step"></button>
+      <button data-slot="question-progress-segment" data-active="false"></button>
+    </div>
+    <div data-slot="question-options" aria-label="First question">
+      <div data-slot="question-option" data-custom="true" data-editing="true">
+        <button type="button" data-slot="question-custom-toggle"></button>
+        <div data-component="text-input-v2" class="question-custom-field">
+          <div data-slot="text-input-v2-value"><input type="text" data-slot="text-input-v2-input"></div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+  return document.querySelector("input") as HTMLInputElement;
+}

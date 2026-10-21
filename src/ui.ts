@@ -26,6 +26,11 @@ function createButtonStyle(): string {
       right: 8px;
       z-index: 1;
     }
+    .${CONTAINER_CLASS}[data-layout="question-inline"] {
+      position: static;
+      margin-inline-end: 0;
+      align-self: center;
+    }
     .${BUTTON_CLASS}, .${CANCEL_CLASS} {
       box-sizing: border-box;
       width: var(--ocvd-button-width, 28px);
@@ -413,6 +418,9 @@ export function setupUI(callbacks: {
       target.kind,
     );
     controls = added ?? target.composer.querySelector<HTMLElement>(`.${CONTAINER_CLASS}`);
+    if (controls && target.kind === "question" && target.editor instanceof HTMLInputElement) {
+      controls.dataset.layout = "question-inline";
+    }
     if (controls && submit) {
       matchButtonSize(controls, submit);
       matchSubmitSpacing(controls, submit);
@@ -423,8 +431,20 @@ export function setupUI(callbacks: {
   observer.observe(document.body, {
     childList: true,
     subtree: true,
+    characterData: true,
     attributes: true,
-    attributeFilter: ["contenteditable", "disabled"],
+    attributeFilter: [
+      "contenteditable",
+      "disabled",
+      "readonly",
+      "inert",
+      "hidden",
+      "aria-hidden",
+      "aria-label",
+      "aria-current",
+      "data-active",
+      "data-disabled",
+    ],
   });
   // Tampermonkey observes pushState/replaceState without page-world monkeypatching.
   window.addEventListener("resize", inject);

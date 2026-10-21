@@ -1,8 +1,9 @@
+import { isTextControl } from "../src/text-control";
 import { type InputTarget, isCurrentTarget } from "../src/insert";
 import { activateNativeSend } from "./native-submit";
 
 export function draftSnapshot(target: InputTarget): string {
-  return target.editor instanceof HTMLTextAreaElement ? target.editor.value : target.editor.innerHTML;
+  return isTextControl(target.editor) ? target.editor.value : target.editor.innerHTML;
 }
 
 function waitForTurn(delay: number, signal: AbortSignal): Promise<void> {
@@ -32,10 +33,10 @@ export async function sendDraft(target: InputTarget, signal: AbortSignal): Promi
   target.composer.addEventListener("click", nativeClick, true);
   const deadline = performance.now() + 1500;
   try {
-    // Give OpenCode 5 ms to settle the inserted draft before the first attempt.
+    // Give OpenCode 10 ms to settle the inserted draft before the first attempt.
     // An already-enabled button alone cannot prove it holds the newly inserted draft.
     // Cancellation, target and draft guards are rechecked below after this wait.
-    await waitForTurn(5, signal);
+    await waitForTurn(10, signal);
     while (true) {
       if (signal.aborted || !isCurrentTarget(target)) return "cancelled";
       if (edited || draftSnapshot(target) !== draft) return "changed";

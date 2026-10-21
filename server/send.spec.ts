@@ -43,8 +43,8 @@ async function setup(page: Page, stateUpdate: StateUpdate = "sync", disabled = f
       // One await Promise.resolve() is insufficient: the second microtask would
       // still see old reactive state when the button was already enabled.
       else if (stateUpdate === "microtasks") queueMicrotask(() => queueMicrotask(commit));
-      // The delayed fixture still settles within the initial 5 ms window.
-      else setTimeout(commit, stateUpdate === "delayed-timer" ? 4 : 0);
+      // The delayed fixture still settles within the initial 10 ms window.
+      else setTimeout(commit, stateUpdate === "delayed-timer" ? 9 : 0);
     });
     const text = document.createTextNode(" new transcript");
     editor.append(text);
@@ -61,10 +61,10 @@ async function result(page: Page) {
 }
 
 for (const update of ["sync", "microtasks", "timer", "delayed-timer"] as const) {
-  test(`first ready attempt waits 5 ms and uses the new ${update} state`, async ({ page }) => {
+  test(`first ready attempt waits 10 ms and uses the new ${update} state`, async ({ page }) => {
     await setup(page, update);
     expect(await result(page)).toEqual({ outcomes: [], clicks: [] });
-    await page.clock.runFor(4);
+    await page.clock.runFor(9);
     expect(await result(page)).toEqual({ outcomes: [], clicks: [] });
     await page.clock.runFor(1);
     expect(await result(page)).toEqual({ outcomes: ["sent"], clicks: ["@context old draft  new transcript"] });
@@ -91,13 +91,13 @@ for (const block of ["disabled", "aria-disabled", "fieldset"]) {
         button.replaceWith(fieldset); fieldset.append(button);
       }
     }, block);
-    await page.clock.runFor(5);
+    await page.clock.runFor(10);
     expect((await result(page)).clicks).toHaveLength(0);
     await page.evaluate(() => {
       window.sendFixture.enable();
       const fieldset = document.querySelector("fieldset"); if (fieldset) fieldset.disabled = false;
     });
-    // Poll again at 55 ms, keeping readiness retries 50 ms apart.
+    // Poll again at 60 ms, keeping readiness retries 50 ms apart.
     await page.clock.runFor(49);
     expect(await result(page)).toEqual({ outcomes: [], clicks: [] });
     await page.clock.runFor(1);
@@ -189,9 +189,9 @@ test("a throttled retry cannot click after the deadline", async ({ page }) => {
 });
 
 for (const interruption of ["abort", "navigate"] as const) {
-  test(`${interruption} during the initial 5 ms wait prevents sending`, async ({ page }) => {
+  test(`${interruption} during the initial 10 ms wait prevents sending`, async ({ page }) => {
     await setup(page);
-    await page.clock.runFor(2);
+    await page.clock.runFor(9);
     await page.evaluate((interruption) => {
       if (interruption === "abort") window.sendFixture.controller.abort();
       else history.pushState({}, "", "/project/other-session");
@@ -204,7 +204,7 @@ for (const interruption of ["abort", "navigate"] as const) {
 test("an unacknowledged native send is not retried and leaves the draft for manual retry", async ({ page }) => {
   // The fixture records the click but deliberately neither accepts nor clears the draft.
   await setup(page, "delayed-timer");
-  await page.clock.runFor(2005);
+  await page.clock.runFor(2010);
   expect(await result(page)).toEqual({ outcomes: ["sent"], clicks: ["@context old draft  new transcript"] });
   await expect(page.locator('[data-component="composer-editor"]')).toContainText("new transcript");
   await page.evaluate(() => {

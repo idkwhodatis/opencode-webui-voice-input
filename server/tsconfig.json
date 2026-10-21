@@ -37,6 +37,7 @@
     "namespace-fixture.ts",
     "caddy-mount-smoke.ts",
     "namespace.spec.ts",
+    "question.spec.ts",
     "namespace.playwright.config.ts"
   ]
 }

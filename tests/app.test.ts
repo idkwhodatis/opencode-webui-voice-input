@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mountComposer } from "./fixtures/composer.js";
+import { mountComposer, mountQuestionInput } from "./fixtures/composer.js";
 
 const mocks = vi.hoisted(() => ({
   store: {} as Record<string, unknown>,
@@ -218,4 +218,59 @@ describe("dictation flow with mocked microphone and Groq", () => {
     expect(mocks.start).not.toHaveBeenCalled();
     expect(mocks.xhr).not.toHaveBeenCalled();
   });
+});
+
+describe("current question input lifecycle", () => {
+  it("writes the new input but never auto-submits a question", async () => {
+    mocks.store.autoSubmit = true;
+    const input = mountQuestionInput();
+    input.value = "Existing";
+    await flush();
+    const nativeClick = vi.fn();
+    for (const button of document.querySelectorAll("button:not(.ocvd-btn)")) {
+      button.addEventListener("click", nativeClick);
+    }
+    click();
+    await flush();
+    click();
+    await flush();
+    response();
+    await flush();
+    expect(input.value).toBe("Existing dictated words");
+    expect(nativeClick).not.toHaveBeenCalled();
+    idle();
+  });
+
+  it.each(["tab", "label", "minimize", "disable"])(
+    "cancels pending transcription on question %s changes",
+    async (change) => {
+      const input = mountQuestionInput();
+      input.value = "First draft";
+      await flush();
+      click();
+      await flush();
+      click();
+      await flush();
+      if (change === "tab") {
+        const tabs = document.querySelectorAll<HTMLElement>(
+          '[data-slot="question-progress-segment"]',
+        );
+        tabs[0].dataset.active = "false";
+        tabs[0].removeAttribute("aria-current");
+        tabs[1].dataset.active = "true";
+      }
+      if (change === "label") {
+        const question = document.querySelector('[data-slot="question-text"]') as HTMLElement;
+        question.childNodes[0].textContent = "Another question";
+      }
+      if (change === "minimize") input.parentElement?.setAttribute("inert", "");
+      if (change === "disable") input.disabled = true;
+      await flush();
+      response();
+      await flush();
+      expect(input.value).toBe("First draft");
+      expect(mocks.xhr.mock.results[0].value.abort).toHaveBeenCalled();
+      expect(document.querySelector(".ocvd-btn.processing")).toBeNull();
+    },
+  );
 });

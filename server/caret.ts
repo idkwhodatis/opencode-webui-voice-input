@@ -1,8 +1,9 @@
+import { isTextControl } from "../src/text-control";
 import { type InputTarget, captureTarget, insertText, isCurrentTarget } from "../src/insert";
 
 interface Boundary { path: number[]; offset: number; prefix: string }
 type Position = { kind: "rich"; start: Boundary; end: Boundary } |
-  { kind: "textarea"; start: number; end: number };
+  { kind: "text"; start: number; end: number };
 interface Bookmark {
   target: InputTarget;
   snapshot: string;
@@ -10,7 +11,7 @@ interface Bookmark {
   stale: boolean;
 }
 
-const snapshot = (target: InputTarget) => target.editor instanceof HTMLTextAreaElement
+const snapshot = (target: InputTarget) => isTextControl(target.editor)
   ? target.editor.value : target.editor.innerHTML;
 const protectedSelector = '[contenteditable="false"], [data-mention], [data-type="mention"], [data-type="attachment"], img';
 
@@ -49,8 +50,9 @@ function selectionPosition(target: InputTarget): Position | null {
   // Focus and selection are separate in browsers. Ignore selection collapse caused by
   // clicking a voice button; preserve the last selection deliberately made in the editor.
   if (!editor.contains(document.activeElement)) return null;
-  if (editor instanceof HTMLTextAreaElement) {
-    return { kind: "textarea", start: editor.selectionStart, end: editor.selectionEnd };
+  if (isTextControl(editor)) {
+    if (editor.selectionStart === null || editor.selectionEnd === null) return null;
+    return { kind: "text", start: editor.selectionStart, end: editor.selectionEnd };
   }
   const selection = window.getSelection();
   if (!selection || selection.rangeCount !== 1) return null;
@@ -79,7 +81,8 @@ export function createCaretTracker() {
       remember();
       const current = snapshot(target);
       const previous = saved.get(target.editor);
-      const same = previous?.target.url === target.url && previous.target.composer === target.composer;
+      const same = previous?.target.url === target.url && previous.target.composer === target.composer &&
+        previous.target.question?.root === target.question?.root && previous.target.question?.key === target.question?.key;
       // Store immutable DOM paths, not a live Range that can move during transcription.
       // Identical framework rerenders can recreate nodes without losing the position.
       return {
@@ -147,6 +150,7 @@ function touchesProtected(editor: HTMLElement, range: Range): boolean {
 export function insertAtCaret(text: string, target: InputTarget, bookmark: Bookmark, edited = false): { inserted: boolean; fallback: boolean } {
   if (!text.trim() || !isCurrentTarget(target) || bookmark.target.editor !== target.editor ||
     bookmark.target.url !== target.url || bookmark.target.composer !== target.composer) return { inserted: false, fallback: false };
+  if (target.editor instanceof HTMLInputElement) text = text.replace(/[\r\n]+/g, " ");
   const append = (fallback: boolean) => ({ inserted: insertText(text, target), fallback });
   // Never overwrite edits made while STT was pending, or guess at an invalid selection.
   // Keep the transcript as an appended draft and explicitly suppress direct send instead.
@@ -154,11 +158,12 @@ export function insertAtCaret(text: string, target: InputTarget, bookmark: Bookm
   if (!bookmark.position) return append(false); // No remembered cursor: retain the old default.
   const editor = target.editor;
   const position = bookmark.position;
-  if (editor instanceof HTMLTextAreaElement && position.kind === "textarea") {
+  if (isTextControl(editor) && position.kind === "text") {
     if (position.start > position.end || position.end > editor.value.length) return append(true);
     const value = editor.value;
     const addition = spaced(text, Array.from(value.slice(0, position.start)).at(-1) ?? "", Array.from(value.slice(position.end))[0] ?? "");
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+    const prototype = editor instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
     if (!setter) return { inserted: false, fallback: false };
     editor.focus();
     if (!isCurrentTarget(target)) return { inserted: false, fallback: false };

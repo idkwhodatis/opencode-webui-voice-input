@@ -13,10 +13,10 @@ function setup(mount = mountRenamedComposer) {
   // happy-dom has no layout; keep production visibility and click guards intact.
   vi.spyOn(button, "getClientRects").mockReturnValue([new DOMRect()] as unknown as DOMRectList);
   let nativeDraft = editor.textContent;
-  // Model app state settling within the 5 ms window, not a longer deferred update.
+  // Model app state settling within the 10 ms window, not a longer deferred update.
   editor.addEventListener("input", () => {
     const next = editor.textContent;
-    setTimeout(() => { nativeDraft = next; }, 4);
+    setTimeout(() => { nativeDraft = next; }, 9);
   });
   const text = document.createTextNode(" new transcript");
   editor.append(text);
@@ -48,14 +48,14 @@ afterEach(() => {
 });
 
 describe("server direct-send settle delay", () => {
-  it.each([mountComposer, mountRenamedComposer])("waits 5 ms for the new native draft and dispatches once (%#)", async (mount) => {
+  it.each([mountComposer, mountRenamedComposer])("waits 10 ms for the new native draft and dispatches once (%#)", async (mount) => {
     const fixture = setup(mount);
     const { editor, clicked, text } = fixture;
     const mention = editor.querySelector("[data-mention]");
     const attachment = editor.querySelector("[data-type=attachment]");
     const draft = editor.innerHTML;
     const result = fixture.start();
-    await vi.advanceTimersByTimeAsync(4);
+    await vi.advanceTimersByTimeAsync(9);
     expect(clicked).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(await result).toBe("sent");
@@ -92,7 +92,7 @@ describe("server direct-send settle delay", () => {
     old.controller.abort();
     const current = setup();
     const result = current.start();
-    await vi.advanceTimersByTimeAsync(4);
+    await vi.advanceTimersByTimeAsync(9);
     expect(old.clicked).not.toHaveBeenCalled();
     expect(current.clicked).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
@@ -104,7 +104,7 @@ describe("server direct-send settle delay", () => {
   it("coalesces concurrent attempts through the native-click guard", async () => {
     const fixture = setup();
     const results = [fixture.start(), fixture.start()];
-    await vi.advanceTimersByTimeAsync(5);
+    await vi.advanceTimersByTimeAsync(10);
     expect((await Promise.all(results)).sort()).toEqual(["changed", "sent"]);
     await vi.advanceTimersByTimeAsync(2000);
     expect(fixture.clicked).toHaveBeenCalledOnce();
@@ -134,10 +134,10 @@ describe("server direct-send settle delay", () => {
     const fixture = setup();
     fixture.button.disabled = true;
     const result = fixture.start();
-    await vi.advanceTimersByTimeAsync(5);
+    await vi.advanceTimersByTimeAsync(10);
     expect(fixture.clicked).not.toHaveBeenCalled();
     fixture.button.disabled = false;
-    // First attempt is at 5 ms; readiness polling remains 50 ms, not 5 ms.
+    // First attempt is at 10 ms; readiness polling remains 50 ms, not 10 ms.
     await vi.advanceTimersByTimeAsync(49);
     expect(fixture.clicked).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
@@ -167,7 +167,7 @@ describe("server direct-send settle delay", () => {
     const draft = fixture.editor.innerHTML;
     // A failed native handler can leave the draft unchanged. Dispatch is still final.
     const result = fixture.start();
-    await vi.advanceTimersByTimeAsync(2005);
+    await vi.advanceTimersByTimeAsync(2010);
     expect(await result).toBe("sent");
     expect(fixture.clicked).toHaveBeenCalledOnce();
     expect(fixture.editor.innerHTML).toBe(draft);
