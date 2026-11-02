@@ -24,4 +24,4 @@ jobs:
       - name: Lint, types, dead-code, coverage, build and mocked browser tests
         run: npm run check
       - name: Verify the installable bundle matches source
-        run: git diff --exit-code -- dist/
+        run: git diff --exit-code -- dist/ desktop/dist/

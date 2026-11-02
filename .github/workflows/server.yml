@@ -45,7 +45,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           npm run check
-          git diff --exit-code -- dist/
+          git diff --exit-code -- dist/ desktop/dist/
       - name: Validate stock Caddy authentication and token file
         if: ${{ !cancelled() }}
         run: |

@@ -52,3 +52,10 @@ export function mountQuestionInput(): HTMLInputElement {
   </div>`;
   return document.querySelector("input") as HTMLInputElement;
 }
+
+// OpenCode v2.2.5, 9bbb8ce: optional New icons keeps the composer structure.
+export function mountNewIconsComposer(): HTMLDivElement {
+  const editor = mountRenamedComposer();
+  document.querySelector("use")?.setAttribute("href", "#opencode-v2-icon-new-arrow-up");
+  return editor;
+}

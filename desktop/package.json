@@ -1,0 +1,13 @@
+{
+  "name": "opencode-desktop-voice-input",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { "./gui-experimental": "./dist/gui-experimental.cjs" },
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "../node_modules/.bin/vitest run --config vitest.config.ts",
+    "typecheck:core": "../node_modules/.bin/tsc --noEmit --strict --skipLibCheck --target ES2022 --moduleResolution bundler --module ESNext --lib ES2022,DOM,DOM.Iterable controller.ts transport.ts"
+  },
+  "peerDependencies": { "@opencode/plugin": "2.2.5" }
+}

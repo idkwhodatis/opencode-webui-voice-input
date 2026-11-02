@@ -1,6 +1,6 @@
 import { isTextControl } from "./text-control.js";
 
-// Verified against dev 907b3bc and beta e5ecb571 (ADRs 0008 and 0009).
+// Verified against dev 907b3bc, beta e5ecb571 and v2.2.5 (ADRs 0008, 0009, 0013).
 // The beta composer renamed both its form and editor; stable V2 retains prompt-input.
 const EDITOR_SELECTOR =
   '[data-component="composer-editor"][contenteditable="true"], [data-component="prompt-input"][contenteditable="true"]';
@@ -167,18 +167,29 @@ export function insertText(text: string, target: InputTarget): boolean {
   return true;
 }
 
+// v2.2.5's optional New icons artwork changes the sprite ID, not the action.
+// Match only the two verified Send symbols; never infer sending from a label.
+export function isSendButton(button: HTMLButtonElement | null): boolean {
+  return Boolean(
+    button?.matches('[data-icon="arrow-up"]') ||
+      button?.querySelector(
+        'svg[data-slot="icon-svg"] use[href="#opencode-v2-icon-arrow-up"], svg[data-slot="icon-svg"] use[href="#opencode-v2-icon-new-arrow-up"]',
+      ),
+  );
+}
+
 export function submitPrompt(target: InputTarget): boolean {
   if (target.kind !== "composer" || !isCurrentTarget(target)) return false;
   const button = target.composer.querySelector<HTMLButtonElement>(
     'button[data-action="composer-submit"], button[data-action="prompt-submit"]',
   );
-  // Both layouts reuse their submit button for Stop and shell execution. The
-  // beta IconButton uses a sprite instead of data-icon; do not guess from labels.
-  const isSend =
-    button?.matches('[data-icon="arrow-up"]') ||
-    button?.querySelector('svg[data-slot="icon-svg"] use[href="#opencode-v2-icon-arrow-up"]');
   // Click only a verified Send icon in the original composer.
-  if (!button || button.disabled || button.getAttribute("aria-disabled") === "true" || !isSend)
+  if (
+    !button ||
+    button.disabled ||
+    button.getAttribute("aria-disabled") === "true" ||
+    !isSendButton(button)
+  )
     return false;
   button.click();
   return true;

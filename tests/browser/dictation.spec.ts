@@ -37,8 +37,8 @@ document.querySelector('[data-action="prompt-submit"]').onclick = () => {
 </script>`;
 
 test.beforeEach(async ({ page }, testInfo) => {
-  const html =
-    testInfo.project.name === "renamed-composer"
+  let html =
+    testInfo.project.name !== "prompt-input-v2"
       ? fixture
           .replaceAll('data-component="prompt-input-v2"', 'data-component="composer"')
           .replaceAll('data-component="prompt-input"', 'data-component="composer-editor"')
@@ -52,6 +52,9 @@ test.beforeEach(async ({ page }, testInfo) => {
           )
           .replace("</button></div>\n  </div>", "</button></div></div>\n  </div>")
       : fixture;
+  if (testInfo.project.name === "v225-new-icons") {
+    html = html.replaceAll("#opencode-v2-icon-arrow-up", "#opencode-v2-icon-new-arrow-up");
+  }
   await page.route("**/*", (route) => route.fulfill({ contentType: "text/html", body: html }));
   await page.goto("https://opencode-fixture.test/project/session/first");
   await page.evaluate(() => {

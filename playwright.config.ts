@@ -3,7 +3,7 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "tests/browser",
   fullyParallel: true,
-  projects: [{ name: "prompt-input-v2" }, { name: "renamed-composer" }],
+  projects: [{ name: "prompt-input-v2" }, { name: "renamed-composer" }, { name: "v225-new-icons" }],
   use: {
     browserName: "chromium",
     headless: true,

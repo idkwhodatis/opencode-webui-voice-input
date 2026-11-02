@@ -1,4 +1,4 @@
-import { type InputTarget, type InsertTarget, captureTarget, isCurrentTarget, submitPrompt } from "../src/insert";
+import { type InputTarget, type InsertTarget, captureTarget, isCurrentTarget, isSendButton, submitPrompt } from "../src/insert";
 import type { DictationState } from "../src/types";
 
 const selector = 'button[data-action="composer-submit"], button[data-action="prompt-submit"]';
@@ -10,12 +10,6 @@ type Attribute = typeof attributes[number];
 function nativeButton(target: InputTarget): HTMLButtonElement | null {
   return target.composer.querySelector<HTMLButtonElement>(selector);
 }
-function isSend(button: HTMLButtonElement): boolean {
-  return button.matches('[data-icon="arrow-up"]') || Boolean(
-    button.querySelector('svg[data-slot="icon-svg"] use[href="#opencode-v2-icon-arrow-up"]'),
-  );
-}
-
 // A narrowly scoped, synchronous exception for sendDraft's already-validated click.
 // User clicks (including synthetic double clicks) remain blocked during transcription.
 export function activateNativeSend(target: InputTarget): boolean {
@@ -107,7 +101,7 @@ export function createNativeSend(onSend: () => void) {
   function sync() {
     const button = !destroyed && state !== "idle" && target?.kind === "composer" && isCurrentTarget(target)
       ? nativeButton(target) : null;
-    const eligible = button && isSend(button) && !button.closest("fieldset:disabled") ? button : null;
+    const eligible = button && isSendButton(button) && !button.closest("fieldset:disabled") ? button : null;
     if (lease?.button !== eligible) { lease?.release(); lease = undefined; }
     if (eligible) {
       lease ??= borrow(eligible);
@@ -122,13 +116,13 @@ export function createNativeSend(onSend: () => void) {
     if (event.type === "click") {
       const alternate = element?.closest(alternateSelector);
       if (alternate && target.composer.contains(alternate)) intent = "alternate";
-      else if (button && isSend(button) && element?.closest(selector) === button) intent = "send";
+      else if (button && isSendButton(button) && element?.closest(selector) === button) intent = "send";
     }
     if (event.type === "submit") {
       const submitter = (event as SubmitEvent).submitter;
       if (submitter instanceof HTMLButtonElement && submitter.matches(alternateSelector) &&
         target.composer.contains(submitter) && event.target === submitter.form) intent = "alternate";
-      else if (button && isSend(button) && event.target === button.form &&
+      else if (button && isSendButton(button) && event.target === button.form &&
         (!submitter || submitter === button)) intent = "send";
     }
     if (event instanceof KeyboardEvent) {
@@ -142,7 +136,7 @@ export function createNativeSend(onSend: () => void) {
           target.composer.previousElementSibling?.matches('[data-component="composer-suggestions"]')) return;
         const alternate = event.ctrlKey || event.metaKey;
         if (alternate && target.composer.querySelector(alternateSelector)) intent = "alternate";
-        else if (button && isSend(button)) intent = alternate ? "alternate" : "send";
+        else if (button && isSendButton(button)) intent = alternate ? "alternate" : "send";
       }
     }
     if (!intent) return;

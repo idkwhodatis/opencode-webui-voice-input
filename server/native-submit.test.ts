@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureTarget } from "../src/insert";
 import type { DictationState } from "../src/types";
-import { mountComposer, mountRenamedComposer } from "../tests/fixtures/composer";
+import { mountComposer, mountNewIconsComposer, mountRenamedComposer } from "../tests/fixtures/composer";
 import { createNativeSend } from "./native-submit";
 import { sendDraft } from "./send";
 
@@ -94,7 +94,7 @@ describe("native voice submission guards", () => {
     expect(f.editor.textContent).toBe("@context old draft");
   });
 
-  it.each([mountComposer, mountRenamedComposer])("plain and Alt Enter finish once and send only the final draft (%#)", async (mount) => {
+  it.each([mountComposer, mountNewIconsComposer, mountRenamedComposer])("plain and Alt Enter finish once and send only the final draft (%#)", async (mount) => {
     for (const keys of [{}, { altKey: true }]) {
       const f = setup("recording", mount);
       expect(f.key(keys).defaultPrevented).toBe(true);

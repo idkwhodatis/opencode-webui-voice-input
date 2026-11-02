@@ -1,3 +1,5 @@
+> 新增 **C：OpenCode Desktop 2.2.5 原生 GUI 插件（experimental）**，保留原 userscript 和 Caddy/Bun 两版。使用官方 ComposerPill/Command/IPC API；API key 仅窗口内存保存，完整转写确认后才插入，不自动发送。[安装与配置](desktop/README.md) · [兼容矩阵与测试边界](docs/COMPATIBILITY.md)。当前尚未完成真实 Desktop/OS 麦克风验收。
+
 # 🚀 OpenCode WebUI Voice Input
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md)

@@ -1,5 +1,5 @@
 import { isTextControl } from "../src/text-control";
-import { type InputTarget, isCurrentTarget } from "../src/insert";
+import { type InputTarget, isCurrentTarget, isSendButton } from "../src/insert";
 import { activateNativeSend } from "./native-submit";
 
 export function draftSnapshot(target: InputTarget): string {
@@ -45,10 +45,8 @@ export async function sendDraft(target: InputTarget, signal: AbortSignal): Promi
       const button = target.composer.querySelector<HTMLButtonElement>(
         'button[data-action="composer-submit"], button[data-action="prompt-submit"]',
       );
-      const isSend = button?.matches('[data-icon="arrow-up"]') ||
-        button?.querySelector('svg[data-slot="icon-svg"] use[href="#opencode-v2-icon-arrow-up"]');
       // Unknown/shell/Stop actions are not a reason to keep retrying.
-      if (!button || !isSend || !button.getClientRects().length) return "unavailable";
+      if (!button || !isSendButton(button) || !button.getClientRects().length) return "unavailable";
       if (!button.matches(":disabled") && activateNativeSend(target)) return "sent";
       await waitForTurn(Math.min(50, Math.max(0, deadline - performance.now())), signal);
     }

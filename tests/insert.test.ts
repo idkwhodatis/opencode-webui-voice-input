@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { captureTarget, insertText, isCurrentTarget, submitPrompt } from "../src/insert.js";
-import { mountComposer, mountRenamedComposer } from "./fixtures/composer.js";
+import {
+  captureTarget,
+  insertText,
+  isCurrentTarget,
+  isSendButton,
+  submitPrompt,
+} from "../src/insert.js";
+import { mountComposer, mountNewIconsComposer, mountRenamedComposer } from "./fixtures/composer.js";
 
 function target(kind: "composer" | "question" = "composer") {
   const result = captureTarget(kind);
@@ -144,5 +150,29 @@ describe("renamed beta composer regression", () => {
     expect(captureTarget()).toBeNull();
     mountRenamedComposer();
     expect(insertText("wrong editor", snapshot)).toBe(false);
+  });
+});
+
+describe("OpenCode v2.2.5 New icons", () => {
+  it("shares the exact Send detector with server native-action guards", () => {
+    mountNewIconsComposer();
+    expect(isSendButton(document.querySelector("button"))).toBe(true);
+    expect(isSendButton(null)).toBe(false);
+  });
+  it("sends once with the new artwork and rejects Stop, shell, busy and unknown icons", () => {
+    mountNewIconsComposer();
+    const snapshot = target();
+    const button = snapshot.composer.querySelector("button") as HTMLButtonElement;
+    const icon = button.querySelector("use") as SVGUseElement;
+    const click = vi.fn();
+    button.addEventListener("click", click);
+    expect(submitPrompt(snapshot)).toBe(true);
+    for (const name of ["stop", "arrow-undo-down", "arrow-up-extra", "loader", "unknown"]) {
+      icon.setAttribute("href", `#opencode-v2-icon-new-${name}`);
+      expect(submitPrompt(snapshot)).toBe(false);
+    }
+    icon.remove(); // Held submit renders a Loader instead of a Send icon.
+    expect(submitPrompt(snapshot)).toBe(false);
+    expect(click).toHaveBeenCalledOnce();
   });
 });

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureTarget } from "../src/insert";
-import { mountComposer, mountRenamedComposer } from "../tests/fixtures/composer";
+import { mountComposer, mountNewIconsComposer, mountRenamedComposer } from "../tests/fixtures/composer";
 import { sendDraft } from "./send";
 
 const controllers: AbortController[] = [];
@@ -48,7 +48,7 @@ afterEach(() => {
 });
 
 describe("server direct-send settle delay", () => {
-  it.each([mountComposer, mountRenamedComposer])("waits 10 ms for the new native draft and dispatches once (%#)", async (mount) => {
+  it.each([mountComposer, mountNewIconsComposer, mountRenamedComposer])("waits 10 ms for the new native draft and dispatches once (%#)", async (mount) => {
     const fixture = setup(mount);
     const { editor, clicked, text } = fixture;
     const mention = editor.querySelector("[data-mention]");

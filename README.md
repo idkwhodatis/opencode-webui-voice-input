@@ -1,11 +1,13 @@
 # 🚀 OpenCode WebUI Voice Input
 
-Voice input for OpenCode WebUI is available through **two supported installation paths**:
+Voice input for OpenCode WebUI is available through **two WebUI installation paths**, plus an experimental native Desktop plugin:
 
 | Path | Best for | How it works |
 | --- | --- | --- |
 | **A. Tampermonkey userscript** | Desktop browsers and browsers that support userscripts/extensions | Injects the mic controls in the browser. Your STT settings/API key live in userscript storage. **[Install the userscript](https://raw.githubusercontent.com/idkwhodatis/opencode-webui-voice-input/master/dist/opencode-voice-dictation.user.js)** |
 | **B. Server-side injection (Caddy + Bun + SQLite)** | **Any modern browser on any device**, especially when userscripts/extensions are unavailable | Caddy/Bun injects the same voice UI into OpenCode. The provider API key is encrypted in SQLite with a separate private master key; provider/model/language and service limits are managed in the web page; startup uses a JSON file. **[Server deployment guide](server/README.md)** |
+
+| **C. Native Desktop GUI plugin (experimental)** | OpenCode Desktop **2.2.5** | Official GUI SDK composer pill and commands; in-memory key, explicit transcript review. **[Desktop installation/configuration](desktop/README.md)** |
 
 **Choose one path for a given OpenCode origin.** Do not intentionally run both at the same time.
 
@@ -112,6 +114,10 @@ The prompt biases the model toward the prompt's language. An English prompt with
 ## 💬 Support and contacts
 
 👉 **[slaid098.dev/support](https://slaid098.dev/support)**
+
+## Current compatibility
+
+OpenCode V2 **2.2.5** (2026-10-30) is the verified source target. Existing editions are retained; the new Send-icon variant is recognized without accepting Stop or shell actions. Native upstream voice calls remain gated to non-production Desktop. [Version matrix, test boundaries and manual acceptance](docs/COMPATIBILITY.md).
 
 ## Development and verification
 

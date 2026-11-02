@@ -21,6 +21,7 @@ export default defineConfig({
       },
       exclude: [
         "tests/**",
+        "desktop/**",
         "server/**",
         "src/index.ts",
         "playwright.config.ts",
